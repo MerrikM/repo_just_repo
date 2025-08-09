@@ -6,10 +6,10 @@ import (
 )
 
 func main() {
-	Level1_2([]int{2, 4, 6, 8, 10})
+	L1_2([]int{2, 4, 6, 8, 10})
 }
 
-func Level1_2(nums []int) {
+func L1_2(nums []int) {
 	var wg sync.WaitGroup
 
 	result := make(chan int, len(nums))
