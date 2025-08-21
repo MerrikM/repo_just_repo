@@ -1,0 +1,11 @@
+Alice	12	500
+Bob	7	1K
+Charlie	23	2M
+Dave	3	750
+Eve	12	500
+Jan	Feb	Mar
+Feb	Mar	Apr
+Mar	Apr	May
+10K
+1M
+500
