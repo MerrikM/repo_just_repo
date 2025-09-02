@@ -57,6 +57,9 @@ func (m *multiFlag) Set(value string) error {
 	return nil
 }
 
+// для запуска программы:
+// go run task3/task3.go --file testfile.txt --timeout 10 --range 1:10 --range 200000:3000000 --range 400:500
+
 func main() {
 	fileName := flag.String("file", "output.txt", "имя выходного файла")
 	timeout := flag.Int("timeout", 10, "таймаут в секундах")
