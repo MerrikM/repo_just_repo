@@ -132,38 +132,62 @@ func executePipelineOrCommand(line string, sigChan chan os.Signal) int {
 	}
 }
 
-func executePipeline(cmds []string, sigChan chan os.Signal) int {
+func executePipeline(commands []string, sigChan chan os.Signal) int {
+	n := len(commands)
+	var prevReader *os.File
 	var wg sync.WaitGroup
-	prevReader := (*os.File)(nil)
-	lastExit := 0
+	exitCode := 0
 
-	for i, c := range cmds {
-		c = strings.TrimSpace(c)
-		args, stdinFile, stdoutFile := parseRedirection(c)
-		if len(args) == 0 {
-			return 1
+	for i, cmdStr := range commands {
+		cmdStr = strings.TrimSpace(cmdStr)
+		args := strings.Fields(cmdStr)
+
+		// Последняя команда выводит в stdout
+		var out *os.File
+		var r, w *os.File
+		if i < n-1 {
+			r, w, _ = os.Pipe()
+			out = w
+		} else {
+			out = os.Stdout
 		}
 
-		pr, pw, _ := os.Pipe()
-		if i == len(cmds)-1 {
-			pw.Close()
-		}
+		// Сохраняем reader для следующей команды
+		currReader := r
 
 		wg.Add(1)
-		exitCode := 0
-		go func(args []string, stdinFile string, stdoutFile string, input *os.File, output *os.File) {
+		go func(args []string, in *os.File, out *os.File, lastReader *os.File) {
 			defer wg.Done()
-			exitCode = runCommand(args, stdinFile, stdoutFile, input, output, sigChan)
-		}(args, stdinFile, stdoutFile, prevReader, pw)
+			defer func() {
+				if out != os.Stdout {
+					out.Close()
+				}
+				if lastReader != nil {
+					lastReader.Close()
+				}
+			}()
 
-		if prevReader != nil {
-			prevReader.Close()
-		}
-		prevReader = pr
-		lastExit = exitCode
+			if isBuiltin(args[0]) {
+				// встроенная команда
+				executeBuiltin(args, "", "", in, out)
+			} else {
+				// внешняя команда
+				cmd := exec.Command(args[0], args[1:]...)
+				if in != nil {
+					cmd.Stdin = in
+				}
+				cmd.Stdout = out
+				cmd.Stderr = os.Stderr
+				cmd.Run()
+			}
+		}(args, prevReader, out, prevReader)
+
+		// Следующая команда читает из r
+		prevReader = currReader
 	}
+
 	wg.Wait()
-	return lastExit
+	return exitCode
 }
 
 // ================= Parse redirections
@@ -275,6 +299,30 @@ func runCommand(args []string, stdinFile, stdoutFile string, input *os.File, out
 
 // ================= Execute builtin (supports pipes)
 func executeBuiltin(args []string, stdinFile, stdoutFile string, input *os.File, output *os.File) int {
+	// Настроим корректный вывод
+	var out *os.File
+	if output != nil {
+		out = output
+	} else {
+		out = os.Stdout
+	}
+
+	// Настроим корректный ввод
+	var in *os.File
+	if input != nil {
+		in = input
+	} else if stdinFile != "" {
+		f, err := os.Open(stdinFile)
+		if err != nil {
+			fmt.Println("Error opening input file:", err)
+			return 1
+		}
+		defer f.Close()
+		in = f
+	} else {
+		in = os.Stdin
+	}
+
 	switch args[0] {
 	case "cd":
 		if len(args) < 2 {
@@ -286,10 +334,9 @@ func executeBuiltin(args []string, stdinFile, stdoutFile string, input *os.File,
 			return 1
 		}
 	case "pwd":
-		dir, _ := os.Getwd()
-		writeOutput(dir+"\n", output)
+		writeOutput(getCwd()+"\n", out)
 	case "echo":
-		writeOutput(strings.Join(args[1:], " ")+"\n", output)
+		writeOutput(strings.Join(args[1:], " ")+"\n", out)
 	case "kill":
 		if len(args) < 2 {
 			fmt.Println("kill: missing PID")
@@ -303,15 +350,28 @@ func executeBuiltin(args []string, stdinFile, stdoutFile string, input *os.File,
 		}
 		process.Kill()
 	case "ps":
-		cmd := exec.Command("tasklist")
-		cmd.Stdout = output
+		cmd := exec.Command("ps", "aux")
+		cmd.Stdout = out
 		cmd.Stderr = os.Stderr
-		cmd.Run()
+		cmd.Stdin = in
+		if err := cmd.Run(); err != nil {
+			fmt.Println("ps error:", err)
+			return 1
+		}
 	default:
 		fmt.Println("Unknown builtin:", args[0])
 		return 1
 	}
+
 	return 0
+}
+
+func getCwd() string {
+	dir, err := os.Getwd()
+	if err != nil {
+		return ""
+	}
+	return dir
 }
 
 // ================= Helper to write output
