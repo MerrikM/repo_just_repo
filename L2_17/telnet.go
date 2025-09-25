@@ -45,7 +45,7 @@ func main() {
 		close(done)
 	}()
 
-	// Горшина для чтения из сокета --> stdout
+	// Горутина для чтения из сокета --> stdout
 	go func() {
 		scanner := bufio.NewScanner(conn)
 		for scanner.Scan() {
