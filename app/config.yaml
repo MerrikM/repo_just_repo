@@ -1,0 +1,12 @@
+databaseConfig:
+  dsn: "postgresql://calendar_user:calendar_pass@localhost:5432/calendar_db?sslmode=disable"
+
+TTL:
+  redis: 900
+
+redisConfig:
+  address: "redis:6379"
+  password: ""
+  database: 0
+
+serverAddr: ":8080"
